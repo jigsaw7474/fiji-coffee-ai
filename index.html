@@ -56,13 +56,13 @@
     <div id="dataModal" class="modal active">
         <div class="bg-white rounded-xl shadow-2xl p-8 max-w-3xl w-full mx-4 my-8">
             <h2 class="text-2xl font-bold text-amber-900 mb-4">Load Your Asset Data</h2>
-            <p class="text-gray-600 mb-6">Choose how you want to load your asset tracker data:</p>
+            <p class="text-gray-600 mb-6">Upload your Excel file to get started:</p>
             
             <div class="space-y-4">
                 <!-- File Upload Option -->
                 <div class="border-2 border-amber-200 rounded-lg p-6 hover:border-amber-400 transition-colors">
                     <h3 class="font-semibold text-amber-900 mb-2">📁 Upload Excel File</h3>
-                    <p class="text-sm text-gray-600 mb-4">Upload your Excel (.xlsx) or CSV file directly</p>
+                    <p class="text-sm text-gray-600 mb-4">Upload your Excel (.xlsx) file from Google Sheets</p>
                     
                     <div 
                         id="dropZone" 
@@ -74,7 +74,7 @@
                         <input 
                             type="file" 
                             id="fileInput" 
-                            accept=".xlsx,.xls,.csv" 
+                            accept=".xlsx,.xls" 
                             class="hidden"
                         />
                         <button 
@@ -85,25 +85,8 @@
                         </button>
                     </div>
                     <p class="text-xs text-gray-500 mt-3">
-                        <strong>Expected sheets:</strong> Users, Machines, Customers, Logs, Customers_Profile, Customer_Requests
+                        <strong>To download from Google Sheets:</strong> File → Download → Microsoft Excel (.xlsx)
                     </p>
-                </div>
-
-                <!-- JSON Paste Option -->
-                <div class="border-2 border-purple-200 rounded-lg p-6 hover:border-purple-400 transition-colors">
-                    <h3 class="font-semibold text-purple-900 mb-2">📋 Paste JSON Data</h3>
-                    <p class="text-sm text-gray-600 mb-3">Export your data as JSON and paste it here</p>
-                    <textarea 
-                        id="jsonInput" 
-                        placeholder='{"users": [...], "machines": [...], "customers": [...]}'
-                        class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono h-32 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                    ></textarea>
-                    <button 
-                        onclick="loadFromJSON()" 
-                        class="mt-3 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium w-full"
-                    >
-                        Load JSON Data
-                    </button>
                 </div>
 
                 <!-- Manual Data Option -->
@@ -308,7 +291,7 @@
                             const worksheet = workbook.Sheets[sheetName];
                             const jsonData = XLSX.utils.sheet_to_json(worksheet);
                             assetData[targetKey] = jsonData;
-                            showStatus(`✅ Loaded ${sheetName}: ${jsonData.length} rows`, 'success');
+                            console.log(`Loaded ${sheetName}: ${jsonData.length} rows`);
                         }
                     });
                     
@@ -336,41 +319,6 @@
             };
             
             reader.readAsArrayBuffer(file);
-        }
-
-        function loadFromJSON() {
-            const jsonText = document.getElementById('jsonInput').value.trim();
-            if (!jsonText) {
-                showStatus('❌ Please paste JSON data', 'error');
-                return;
-            }
-
-            try {
-                showStatus('📥 Parsing JSON...', 'info');
-                const parsed = JSON.parse(jsonText);
-                
-                // Update assetData with parsed data
-                if (parsed.users) assetData.users = parsed.users;
-                if (parsed.machines) assetData.machines = parsed.machines;
-                if (parsed.customers) assetData.customers = parsed.customers;
-                if (parsed.logs) assetData.logs = parsed.logs;
-                if (parsed.customersProfile) assetData.customersProfile = parsed.customersProfile;
-                if (parsed.customerRequests) assetData.customerRequests = parsed.customerRequests;
-                
-                const totalRecords = Object.values(assetData).reduce((sum, arr) => sum + arr.length, 0);
-                
-                if (totalRecords > 0) {
-                    showStatus(`✅ Successfully loaded ${totalRecords} records!`, 'success');
-                    setTimeout(() => {
-                        initializeApp();
-                        hideDataModal();
-                    }, 1000);
-                } else {
-                    showStatus('❌ No valid data found in JSON', 'error');
-                }
-            } catch (error) {
-                showStatus('❌ Invalid JSON format: ' + error.message, 'error');
-            }
         }
 
         function loadSampleData() {
@@ -427,25 +375,13 @@
             updateStats();
             
             // Add welcome message
-            const welcome = document.createElement('div');
-            welcome.className = 'flex items-start space-x-3 message-fade-in';
-            
             const dataInfo = [];
             if (assetData.users.length > 0) dataInfo.push(`${assetData.users.length} Users`);
             if (assetData.machines.length > 0) dataInfo.push(`${assetData.machines.length} Machines`);
             if (assetData.customers.length > 0) dataInfo.push(`${assetData.customers.length} Customers`);
             if (assetData.logs.length > 0) dataInfo.push(`${assetData.logs.length} Service Logs`);
             
-            welcome.innerHTML = `
-                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center text-white font-bold flex-shrink-0">
-                    AI
-                </div>
-                <div class="bg-gray-100 rounded-lg p-3 max-w-md">
-                    <p class="text-gray-800">🎉 Data loaded successfully! I'm ready to answer your questions.</p>
-                    <p class="text-sm text-gray-600 mt-2"><strong>Loaded:</strong> ${dataInfo.join(', ')}</p>
-                </div>
-            `;
-            document.getElementById('messagesContainer').appendChild(welcome);
+            addMessage(`🎉 Data loaded successfully! I'm ready to answer your questions.<br><strong>Loaded:</strong> ${dataInfo.join(', ')}`);
         }
 
         function updateStats() {
@@ -551,60 +487,166 @@
             }
         }
 
+        // Simple query processor - works without API
+        function processQueryLocally(question) {
+            const q = question.toLowerCase();
+            
+            // List all machines
+            if (q.includes('what machines') || q.includes('show me all machines') || q.includes('list machines')) {
+                if (assetData.machines.length === 0) {
+                    return "I don't have any machine data loaded.";
+                }
+                
+                let html = `<p class="mb-2">Here are all the machines in the system:</p>`;
+                html += `<div class="space-y-2">`;
+                assetData.machines.forEach(m => {
+                    const keys = Object.keys(m);
+                    html += `<div class="bg-white p-2 rounded border border-gray-200">`;
+                    keys.forEach(key => {
+                        html += `<div><strong>${key}:</strong> ${m[key]}</div>`;
+                    });
+                    html += `</div>`;
+                });
+                html += `</div>`;
+                return html;
+            }
+            
+            // List all users
+            if (q.includes('users') || q.includes('show me all users')) {
+                if (assetData.users.length === 0) {
+                    return "I don't have any user data loaded.";
+                }
+                
+                let html = `<p class="mb-2">Here are all the users:</p>`;
+                html += `<div class="space-y-2">`;
+                assetData.users.forEach(u => {
+                    html += `<div class="bg-white p-2 rounded border border-gray-200">`;
+                    html += `<div><strong>Name:</strong> ${u.Name || u.name}</div>`;
+                    html += `<div><strong>Email:</strong> ${u.Email || u.email}</div>`;
+                    html += `<div><strong>Role:</strong> ${u.Role || u.role}</div>`;
+                    html += `</div>`;
+                });
+                html += `</div>`;
+                return html;
+            }
+            
+            // Machines in location
+            if (q.includes('in suva') || q.includes('in nadi') || q.includes('in lautoka')) {
+                const location = q.includes('suva') ? 'suva' : q.includes('nadi') ? 'nadi' : 'lautoka';
+                const filtered = assetData.machines.filter(m => 
+                    (m.location || '').toLowerCase().includes(location)
+                );
+                
+                if (filtered.length === 0) {
+                    return `No machines found in ${location.charAt(0).toUpperCase() + location.slice(1)}.`;
+                }
+                
+                let html = `<p class="mb-2">Machines in ${location.charAt(0).toUpperCase() + location.slice(1)}:</p>`;
+                html += `<div class="space-y-2">`;
+                filtered.forEach(m => {
+                    html += `<div class="bg-white p-2 rounded border border-gray-200">`;
+                    Object.keys(m).forEach(key => {
+                        html += `<div><strong>${key}:</strong> ${m[key]}</div>`;
+                    });
+                    html += `</div>`;
+                });
+                html += `</div>`;
+                return html;
+            }
+            
+            // List customers
+            if (q.includes('customers') || q.includes('list all customers')) {
+                if (assetData.customers.length === 0) {
+                    return "I don't have any customer data loaded.";
+                }
+                
+                let html = `<p class="mb-2">Here are all the customers:</p>`;
+                html += `<div class="space-y-2">`;
+                assetData.customers.forEach(c => {
+                    html += `<div class="bg-white p-2 rounded border border-gray-200">`;
+                    Object.keys(c).forEach(key => {
+                        html += `<div><strong>${key}:</strong> ${c[key]}</div>`;
+                    });
+                    html += `</div>`;
+                });
+                html += `</div>`;
+                return html;
+            }
+            
+            // Last service / logs
+            if (q.includes('last service') || q.includes('service log')) {
+                if (assetData.logs.length === 0) {
+                    return "I don't have any service log data loaded.";
+                }
+                
+                const sortedLogs = [...assetData.logs].sort((a, b) => 
+                    new Date(b.date || b.Date) - new Date(a.date || a.Date)
+                );
+                const lastLog = sortedLogs[0];
+                
+                let html = `<p class="mb-2">Most recent service:</p>`;
+                html += `<div class="bg-white p-2 rounded border border-gray-200">`;
+                Object.keys(lastLog).forEach(key => {
+                    html += `<div><strong>${key}:</strong> ${lastLog[key]}</div>`;
+                });
+                html += `</div>`;
+                return html;
+            }
+            
+            // Maintenance status
+            if (q.includes('need maintenance') || q.includes('needs maintenance')) {
+                const needsMaintenance = assetData.machines.filter(m => 
+                    (m.status || '').toLowerCase().includes('maintenance')
+                );
+                
+                if (needsMaintenance.length === 0) {
+                    return "Great news! No machines currently need maintenance.";
+                }
+                
+                let html = `<p class="mb-2">Machines needing maintenance:</p>`;
+                html += `<div class="space-y-2">`;
+                needsMaintenance.forEach(m => {
+                    html += `<div class="bg-white p-2 rounded border border-gray-200">`;
+                    Object.keys(m).forEach(key => {
+                        html += `<div><strong>${key}:</strong> ${m[key]}</div>`;
+                    });
+                    html += `</div>`;
+                });
+                html += `</div>`;
+                return html;
+            }
+            
+            // Default response
+            return `I can help you with questions about:<br>
+                • "What machines do we have?"<br>
+                • "Show me all users"<br>
+                • "Which machines are in Suva?"<br>
+                • "List all customers"<br>
+                • "What was the last service performed?"<br>
+                • "Which machines need maintenance?"<br><br>
+                Try asking one of these questions!`;
+        }
+
         async function processQuery(question) {
             try {
                 showTypingIndicator();
                 sendButton.disabled = true;
                 sendButton.textContent = 'Thinking...';
 
-                const response = await fetch('https://api.anthropic.com/v1/messages', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        model: 'claude-sonnet-4-20250514',
-                        max_tokens: 2000,
-                        messages: [{
-                            role: 'user',
-                            content: `You are an AI assistant for a Fiji Coffee Asset Tracker system. Answer questions about the asset database using ONLY the data provided below. Be conversational and helpful.
-
-Asset Database:
-${JSON.stringify(assetData, null, 2)}
-
-User Question: ${question}
-
-Instructions:
-1. Analyze the question and find relevant data from the provided database
-2. Provide a clear, conversational answer
-3. If showing multiple items, format them nicely with HTML (use tables, lists, or cards)
-4. If the data doesn't contain the answer, politely say so
-5. Be specific and include relevant details (names, dates, models, locations, status, etc.)
-6. Use the actual field names and values from the data structure provided
-7. For tables, use proper HTML table tags with styling
-8. Keep responses concise but informative
-
-Answer in a friendly, professional tone.`
-                        }]
-                    })
-                });
-
-                const data = await response.json();
-                hideTypingIndicator();
+                // Process locally
+                const response = processQueryLocally(question);
                 
-                if (data.content && data.content[0]) {
-                    addMessage(data.content[0].text);
-                } else if (data.error) {
-                    addMessage(`Sorry, there was an error: ${data.error.message || 'Unknown error'}`);
-                } else {
-                    addMessage('Sorry, I encountered an error processing your question. Please try again.');
-                }
+                setTimeout(() => {
+                    hideTypingIndicator();
+                    addMessage(response);
+                    sendButton.disabled = false;
+                    sendButton.textContent = 'Send';
+                }, 500);
 
             } catch (error) {
                 hideTypingIndicator();
-                addMessage('Sorry, I encountered an error. Please check your connection and try again.');
+                addMessage('Sorry, I encountered an error processing your question.');
                 console.error('Error:', error);
-            } finally {
                 sendButton.disabled = false;
                 sendButton.textContent = 'Send';
             }
