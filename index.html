@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fiji Coffee Asset Tracker - AI Assistant</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        .message-fade-in {
+            animation: fadeIn 0.3s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .typing-indicator span {
+            animation: blink 1.4s infinite;
+            animation-fill-mode: both;
+        }
+        .typing-indicator span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        .typing-indicator span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+        @keyframes blink {
+            0%, 80%, 100% { opacity: 0.3; }
+            40% { opacity: 1; }
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            overflow-y: auto;
+        }
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .drag-over {
+            border-color: #f59e0b !important;
+            background-color: #fef3c7 !important;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-amber-50 to-orange-50 min-h-screen">
+    <!-- Data Loading Modal -->
+    <div id="dataModal" class="modal active">
+        <div class="bg-white rounded-xl shadow-2xl p-8 max-w-3xl w-full mx-4 my-8">
+            <h2 class="text-2xl font-bold text-amber-900 mb-4">Load Your Asset Data</h2>
+            <p class="text-gray-600 mb-6">Choose how you want to load your asset tracker data:</p>
+            
+            <div class="space-y-4">
+                <!-- File Upload Option -->
+                <div class="border-2 border-amber-200 rounded-lg p-6 hover:border-amber-400 transition-colors">
+                    <h3 class="font-semibold text-amber-900 mb-2">📁 Upload Excel File</h3>
+                    <p class="text-sm text-gray-600 mb-4">Upload your Excel (.xlsx) or CSV file directly</p>
+                    
+                    <div 
+                        id="dropZone" 
+                        class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-amber-400 transition-colors cursor-pointer"
+                    >
+                        <div class="text-4xl mb-2">📤</div>
+                        <p class="text-gray-700 font-medium mb-1">Drop your Excel file here</p>
+                        <p class="text-sm text-gray-500 mb-3">or click to browse</p>
+                        <input 
+                            type="file" 
+                            id="fileInput" 
+                            accept=".xlsx,.xls,.csv" 
+                            class="hidden"
+                        />
+                        <button 
+                            onclick="document.getElementById('fileInput').click()" 
+                            class="bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 transition-colors text-sm font-medium"
+                        >
+                            Choose File
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-3">
+                        <strong>Expected sheets:</strong> Users, Machines, Customers, Logs, Customers_Profile, Customer_Requests
+                    </p>
+                </div>
+
+                <!-- JSON Paste Option -->
+                <div class="border-2 border-purple-200 rounded-lg p-6 hover:border-purple-400 transition-colors">
+                    <h3 class="font-semibold text-purple-900 mb-2">📋 Paste JSON Data</h3>
+                    <p class="text-sm text-gray-600 mb-3">Export your data as JSON and paste it here</p>
+                    <textarea 
+                        id="jsonInput" 
+                        placeholder='{"users": [...], "machines": [...], "customers": [...]}'
+                        class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono h-32 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    ></textarea>
+                    <button 
+                        onclick="loadFromJSON()" 
+                        class="mt-3 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium w-full"
+                    >
+                        Load JSON Data
+                    </button>
+                </div>
+
+                <!-- Manual Data Option -->
+                <div class="border-2 border-blue-200 rounded-lg p-4 hover:border-blue-400 transition-colors">
+                    <h3 class="font-semibold text-blue-900 mb-2">✏️ Use Sample Data</h3>
+                    <p class="text-sm text-gray-600 mb-3">Start with demo data to test the assistant</p>
+                    <button 
+                        onclick="loadSampleData()" 
+                        class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium w-full"
+                    >
+                        Load Sample Data
+                    </button>
+                </div>
+            </div>
+
+            <div id="loadingStatus" class="mt-4 text-center text-sm font-medium hidden"></div>
+        </div>
+    </div>
+
+    <div class="container mx-auto px-4 py-8 max-w-6xl">
+        <!-- Header -->
+        <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl font-bold text-amber-900">☕ Fiji Coffee Asset Tracker</h1>
+                    <p class="text-amber-700 mt-1">AI Assistant - Ask me anything about your coffee machines</p>
+                </div>
+                <div class="text-right">
+                    <div class="text-sm text-amber-600" id="dataStatus">No data loaded</div>
+                    <div class="flex items-center justify-end mt-1">
+                        <div id="statusIndicator" class="w-2 h-2 bg-gray-400 rounded-full mr-2"></div>
+                        <button onclick="showDataModal()" class="text-xs text-blue-600 hover:underline">Change Data Source</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Chat Interface -->
+            <div class="lg:col-span-2 bg-white rounded-xl shadow-lg flex flex-col" style="height: 600px;">
+                <!-- Chat Header -->
+                <div class="bg-gradient-to-r from-amber-600 to-orange-600 text-white p-4 rounded-t-xl">
+                    <h2 class="text-xl font-semibold">Chat with Your Asset Data</h2>
+                    <p class="text-sm text-amber-100">Ask questions in plain English</p>
+                </div>
+
+                <!-- Messages Container -->
+                <div id="messagesContainer" class="flex-1 overflow-y-auto p-4 space-y-4">
+                    <!-- Welcome message -->
+                    <div class="flex items-start space-x-3 message-fade-in">
+                        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center text-white font-bold flex-shrink-0">
+                            AI
+                        </div>
+                        <div class="bg-gray-100 rounded-lg p-3 max-w-md">
+                            <p class="text-gray-800">👋 Hello! Load your data to get started. I can help you find information about your coffee machines, customers, service logs, and more.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Input Area -->
+                <div class="border-t border-gray-200 p-4">
+                    <form id="chatForm" class="flex space-x-2">
+                        <input 
+                            type="text" 
+                            id="userInput" 
+                            placeholder="Ask about your coffee machines..." 
+                            class="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                            disabled
+                        />
+                        <button 
+                            type="submit" 
+                            id="sendButton"
+                            class="bg-gradient-to-r from-amber-600 to-orange-600 text-white px-6 py-2 rounded-lg hover:from-amber-700 hover:to-orange-700 transition-all font-medium disabled:opacity-50"
+                            disabled
+                        >
+                            Send
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Quick Stats & Sample Queries -->
+            <div class="space-y-6">
+                <!-- Quick Stats -->
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h3 class="text-lg font-semibold text-amber-900 mb-4">Database Overview</h3>
+                    <div class="space-y-3" id="statsContainer">
+                        <div class="text-center text-gray-400 py-4">Load data to see stats</div>
+                    </div>
+                </div>
+
+                <!-- Sample Queries -->
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h3 class="text-lg font-semibold text-amber-900 mb-4">Sample Questions</h3>
+                    <div class="space-y-2" id="sampleQueries">
+                        <div class="text-sm text-gray-400 text-center py-4">Load data to see sample queries</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let assetData = {
+            users: [],
+            machines: [],
+            customers: [],
+            logs: [],
+            customersProfile: [],
+            customerRequests: []
+        };
+
+        function showDataModal() {
+            document.getElementById('dataModal').classList.add('active');
+        }
+
+        function hideDataModal() {
+            document.getElementById('dataModal').classList.remove('active');
+        }
+
+        function showStatus(message, type = 'info') {
+            const status = document.getElementById('loadingStatus');
+            status.classList.remove('hidden');
+            status.className = `mt-4 text-center text-sm font-medium ${
+                type === 'success' ? 'text-green-600' : 
+                type === 'error' ? 'text-red-600' : 
+                'text-blue-600'
+            }`;
+            status.textContent = message;
+        }
+
+        // File Upload Handling
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+
+        dropZone.addEventListener('click', () => fileInput.click());
+        
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('drag-over');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        function handleFile(file) {
+            showStatus('📥 Reading file...', 'info');
+            
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    
+                    showStatus('📊 Processing sheets...', 'info');
+                    
+                    // Map of expected sheet names (case insensitive)
+                    const sheetMapping = {
+                        'users': 'users',
+                        'machines': 'machines',
+                        'customers': 'customers',
+                        'logs': 'logs',
+                        'customers_profile': 'customersProfile',
+                        'customersprofile': 'customersProfile',
+                        'customer_requests': 'customerRequests',
+                        'customerrequests': 'customerRequests'
+                    };
+                    
+                    // Reset data
+                    assetData = {
+                        users: [],
+                        machines: [],
+                        customers: [],
+                        logs: [],
+                        customersProfile: [],
+                        customerRequests: []
+                    };
+                    
+                    // Process each sheet
+                    workbook.SheetNames.forEach(sheetName => {
+                        const normalizedName = sheetName.toLowerCase().replace(/[\s_-]/g, '');
+                        const targetKey = sheetMapping[normalizedName];
+                        
+                        if (targetKey) {
+                            const worksheet = workbook.Sheets[sheetName];
+                            const jsonData = XLSX.utils.sheet_to_json(worksheet);
+                            assetData[targetKey] = jsonData;
+                            showStatus(`✅ Loaded ${sheetName}: ${jsonData.length} rows`, 'success');
+                        }
+                    });
+                    
+                    // Check if we got any data
+                    const totalRecords = Object.values(assetData).reduce((sum, arr) => sum + arr.length, 0);
+                    
+                    if (totalRecords > 0) {
+                        showStatus(`✅ Successfully loaded ${totalRecords} total records!`, 'success');
+                        setTimeout(() => {
+                            initializeApp();
+                            hideDataModal();
+                        }, 1000);
+                    } else {
+                        showStatus('❌ No data found in file. Check sheet names.', 'error');
+                    }
+                    
+                } catch (error) {
+                    console.error('Error processing file:', error);
+                    showStatus('❌ Error processing file: ' + error.message, 'error');
+                }
+            };
+            
+            reader.onerror = function() {
+                showStatus('❌ Error reading file', 'error');
+            };
+            
+            reader.readAsArrayBuffer(file);
+        }
+
+        function loadFromJSON() {
+            const jsonText = document.getElementById('jsonInput').value.trim();
+            if (!jsonText) {
+                showStatus('❌ Please paste JSON data', 'error');
+                return;
+            }
+
+            try {
+                showStatus('📥 Parsing JSON...', 'info');
+                const parsed = JSON.parse(jsonText);
+                
+                // Update assetData with parsed data
+                if (parsed.users) assetData.users = parsed.users;
+                if (parsed.machines) assetData.machines = parsed.machines;
+                if (parsed.customers) assetData.customers = parsed.customers;
+                if (parsed.logs) assetData.logs = parsed.logs;
+                if (parsed.customersProfile) assetData.customersProfile = parsed.customersProfile;
+                if (parsed.customerRequests) assetData.customerRequests = parsed.customerRequests;
+                
+                const totalRecords = Object.values(assetData).reduce((sum, arr) => sum + arr.length, 0);
+                
+                if (totalRecords > 0) {
+                    showStatus(`✅ Successfully loaded ${totalRecords} records!`, 'success');
+                    setTimeout(() => {
+                        initializeApp();
+                        hideDataModal();
+                    }, 1000);
+                } else {
+                    showStatus('❌ No valid data found in JSON', 'error');
+                }
+            } catch (error) {
+                showStatus('❌ Invalid JSON format: ' + error.message, 'error');
+            }
+        }
+
+        function loadSampleData() {
+            showStatus('📥 Loading sample data...', 'info');
+            
+            assetData = {
+                users: [
+                    { Email: "graphics@lawhillfiji.com", Name: "Sahil Kumar", Role: "Admin", PIN: "7474" },
+                    { Email: "artwiz7474@gmail.com", Name: "Avinesh Kumar", Role: "Technician", PIN: "1234" },
+                    { Email: "shahilkumar7474@gmail.com", Name: "Rovilyn", Role: "Management", PIN: "4321" }
+                ],
+                machines: [
+                    { id: "M001", business: "Prouds", brand: "La Marzocco", model: "Linea PB", status: "operational", location: "Suva" },
+                    { id: "M002", business: "Hot Bread Kitchen", brand: "Expobar", model: "Zircon", status: "needs_maintenance", location: "Nadi" },
+                    { id: "M003", business: "The Coffee Hub", brand: "La Marzocco", model: "GB5", status: "operational", location: "Suva" },
+                    { id: "M004", business: "Cafe Bliss", brand: "Victoria Arduino", model: "Black Eagle", status: "operational", location: "Lautoka" },
+                    { id: "M005", business: "Morris Hedstrom", brand: "Nuova Simonelli", model: "Aurelia II", status: "operational", location: "Suva" }
+                ],
+                customers: [
+                    { name: "Prouds", location: "Suva", contact: "John Doe", phone: "9991234" },
+                    { name: "Hot Bread Kitchen", location: "Nadi", contact: "Jane Smith", phone: "9995678" },
+                    { name: "The Coffee Hub", location: "Suva", contact: "Peter Wilson", phone: "9993456" },
+                    { name: "Cafe Bliss", location: "Lautoka", contact: "Sarah Brown", phone: "9997890" },
+                    { name: "Morris Hedstrom", location: "Suva", contact: "Mike Johnson", phone: "9992345" }
+                ],
+                logs: [
+                    { machineId: "M001", technician: "Avinesh Kumar", date: "2024-02-10", type: "routine_maintenance", notes: "Cleaned group heads, replaced seals" },
+                    { machineId: "M002", technician: "Avinesh Kumar", date: "2024-01-15", type: "repair", notes: "Fixed pressure issue, replaced pump" },
+                    { machineId: "M003", technician: "Avinesh Kumar", date: "2024-02-01", type: "inspection", notes: "All systems normal" },
+                    { machineId: "M001", technician: "Sahil Kumar", date: "2024-01-20", type: "installation", notes: "Initial setup and calibration" },
+                    { machineId: "M004", technician: "Avinesh Kumar", date: "2024-02-05", type: "routine_maintenance", notes: "Descaling and cleaning" }
+                ],
+                customersProfile: [],
+                customerRequests: []
+            };
+
+            showStatus('✅ Sample data loaded!', 'success');
+            setTimeout(() => {
+                initializeApp();
+                hideDataModal();
+            }, 800);
+        }
+
+        function initializeApp() {
+            // Enable chat
+            document.getElementById('userInput').disabled = false;
+            document.getElementById('sendButton').disabled = false;
+
+            // Update status
+            document.getElementById('dataStatus').textContent = 'Connected to Asset Database';
+            document.getElementById('statusIndicator').className = 'w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse';
+
+            // Update stats
+            updateStats();
+            
+            // Add welcome message
+            const welcome = document.createElement('div');
+            welcome.className = 'flex items-start space-x-3 message-fade-in';
+            
+            const dataInfo = [];
+            if (assetData.users.length > 0) dataInfo.push(`${assetData.users.length} Users`);
+            if (assetData.machines.length > 0) dataInfo.push(`${assetData.machines.length} Machines`);
+            if (assetData.customers.length > 0) dataInfo.push(`${assetData.customers.length} Customers`);
+            if (assetData.logs.length > 0) dataInfo.push(`${assetData.logs.length} Service Logs`);
+            
+            welcome.innerHTML = `
+                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center text-white font-bold flex-shrink-0">
+                    AI
+                </div>
+                <div class="bg-gray-100 rounded-lg p-3 max-w-md">
+                    <p class="text-gray-800">🎉 Data loaded successfully! I'm ready to answer your questions.</p>
+                    <p class="text-sm text-gray-600 mt-2"><strong>Loaded:</strong> ${dataInfo.join(', ')}</p>
+                </div>
+            `;
+            document.getElementById('messagesContainer').appendChild(welcome);
+        }
+
+        function updateStats() {
+            const stats = [];
+            
+            if (assetData.users.length > 0) {
+                stats.push(`<div class="flex justify-between items-center">
+                    <span class="text-gray-600">Users</span>
+                    <span class="font-bold text-amber-900">${assetData.users.length}</span>
+                </div>`);
+            }
+            if (assetData.machines.length > 0) {
+                stats.push(`<div class="flex justify-between items-center">
+                    <span class="text-gray-600">Machines</span>
+                    <span class="font-bold text-amber-900">${assetData.machines.length}</span>
+                </div>`);
+            }
+            if (assetData.customers.length > 0) {
+                stats.push(`<div class="flex justify-between items-center">
+                    <span class="text-gray-600">Customers</span>
+                    <span class="font-bold text-amber-900">${assetData.customers.length}</span>
+                </div>`);
+            }
+            if (assetData.logs.length > 0) {
+                stats.push(`<div class="flex justify-between items-center">
+                    <span class="text-gray-600">Service Logs</span>
+                    <span class="font-bold text-amber-900">${assetData.logs.length}</span>
+                </div>`);
+            }
+            
+            document.getElementById('statsContainer').innerHTML = stats.join('');
+
+            // Update sample queries
+            const queries = [
+                'What machines do we have?',
+                'Show me all users and their roles',
+                'Which machines are in Suva?',
+                'What was the last service performed?',
+                'List all customers with contact info',
+                'Which machines need maintenance?'
+            ];
+
+            const queriesHtml = queries.map(q => 
+                `<button onclick="askQuestion('${q}')" class="w-full text-left text-sm bg-amber-50 hover:bg-amber-100 text-amber-900 px-3 py-2 rounded-lg transition-colors">
+                    ${q}
+                </button>`
+            ).join('');
+            document.getElementById('sampleQueries').innerHTML = queriesHtml;
+        }
+
+        // Chat functionality
+        const messagesContainer = document.getElementById('messagesContainer');
+        const chatForm = document.getElementById('chatForm');
+        const userInput = document.getElementById('userInput');
+        const sendButton = document.getElementById('sendButton');
+
+        function addMessage(text, isUser = false) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `flex items-start space-x-3 message-fade-in ${isUser ? 'flex-row-reverse space-x-reverse' : ''}`;
+            
+            const avatar = document.createElement('div');
+            avatar.className = `w-8 h-8 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0 ${
+                isUser ? 'bg-gradient-to-br from-blue-500 to-blue-600' : 'bg-gradient-to-br from-amber-500 to-orange-500'
+            }`;
+            avatar.textContent = isUser ? 'U' : 'AI';
+            
+            const bubble = document.createElement('div');
+            bubble.className = `rounded-lg p-3 max-w-md ${
+                isUser ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-800'
+            }`;
+            bubble.innerHTML = text;
+            
+            messageDiv.appendChild(avatar);
+            messageDiv.appendChild(bubble);
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function showTypingIndicator() {
+            const typingDiv = document.createElement('div');
+            typingDiv.id = 'typingIndicator';
+            typingDiv.className = 'flex items-start space-x-3 message-fade-in';
+            typingDiv.innerHTML = `
+                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center text-white font-bold flex-shrink-0">
+                    AI
+                </div>
+                <div class="bg-gray-100 rounded-lg p-3">
+                    <div class="typing-indicator flex space-x-1">
+                        <span class="w-2 h-2 bg-gray-400 rounded-full"></span>
+                        <span class="w-2 h-2 bg-gray-400 rounded-full"></span>
+                        <span class="w-2 h-2 bg-gray-400 rounded-full"></span>
+                    </div>
+                </div>
+            `;
+            messagesContainer.appendChild(typingDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function hideTypingIndicator() {
+            const typingIndicator = document.getElementById('typingIndicator');
+            if (typingIndicator) {
+                typingIndicator.remove();
+            }
+        }
+
+        async function processQuery(question) {
+            try {
+                showTypingIndicator();
+                sendButton.disabled = true;
+                sendButton.textContent = 'Thinking...';
+
+                const response = await fetch('https://api.anthropic.com/v1/messages', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        model: 'claude-sonnet-4-20250514',
+                        max_tokens: 2000,
+                        messages: [{
+                            role: 'user',
+                            content: `You are an AI assistant for a Fiji Coffee Asset Tracker system. Answer questions about the asset database using ONLY the data provided below. Be conversational and helpful.
+
+Asset Database:
+${JSON.stringify(assetData, null, 2)}
+
+User Question: ${question}
+
+Instructions:
+1. Analyze the question and find relevant data from the provided database
+2. Provide a clear, conversational answer
+3. If showing multiple items, format them nicely with HTML (use tables, lists, or cards)
+4. If the data doesn't contain the answer, politely say so
+5. Be specific and include relevant details (names, dates, models, locations, status, etc.)
+6. Use the actual field names and values from the data structure provided
+7. For tables, use proper HTML table tags with styling
+8. Keep responses concise but informative
+
+Answer in a friendly, professional tone.`
+                        }]
+                    })
+                });
+
+                const data = await response.json();
+                hideTypingIndicator();
+                
+                if (data.content && data.content[0]) {
+                    addMessage(data.content[0].text);
+                } else if (data.error) {
+                    addMessage(`Sorry, there was an error: ${data.error.message || 'Unknown error'}`);
+                } else {
+                    addMessage('Sorry, I encountered an error processing your question. Please try again.');
+                }
+
+            } catch (error) {
+                hideTypingIndicator();
+                addMessage('Sorry, I encountered an error. Please check your connection and try again.');
+                console.error('Error:', error);
+            } finally {
+                sendButton.disabled = false;
+                sendButton.textContent = 'Send';
+            }
+        }
+
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const question = userInput.value.trim();
+            if (!question) return;
+
+            addMessage(question, true);
+            userInput.value = '';
+            
+            await processQuery(question);
+        });
+
+        function askQuestion(question) {
+            userInput.value = question;
+            chatForm.dispatchEvent(new Event('submit'));
+        }
+    </script>
+</body>
+</html>
